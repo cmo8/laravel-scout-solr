@@ -60,9 +60,9 @@ class SolrEngine extends Engine
             $model = $models->first();
             $update = $this->client->createUpdate();
             $documents = $models->map(
-                /**
-                 * @return false|\Solarium\QueryType\Update\Query\Document\Document
-                 */
+            /**
+             * @return false|\Solarium\QueryType\Update\Query\Document\Document
+             */
                 function ($model) use ($update) {
                     /** @var \Solarium\QueryType\Update\Query\Document\Document */
                     $document = $update->createDocument();
