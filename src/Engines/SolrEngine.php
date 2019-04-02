@@ -343,4 +343,19 @@ class SolrEngine extends Engine
             'placeholderStart' => $start,
         ];
     }
+
+    /**
+     * Flush all of the model's records from the engine.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model  $model
+     * @return void
+     */
+    public function flush($model)
+    {
+        // $indexName   = $model->searchableAs();
+        // $pathToIndex = $this->tnt->config['storage']."/{$indexName}.index";
+        // if (file_exists($pathToIndex)) {
+        //     unlink($pathToIndex);
+        // }
+    }
 }
