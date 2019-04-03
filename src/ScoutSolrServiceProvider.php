@@ -25,7 +25,7 @@ class ScoutSolrServiceProvider extends ServiceProvider
         // bind the solarium client as a singleton so we can DI
         $this->app->singleton(\Solarium\Client::class, function ($app) {
             return new \Solarium\Client([
-                'endpoint' => config('solr.endpoints'),
+                'endpoint' => config('scout-solr.endpoints'),
             ]);
         });
         $this->mergeConfigFrom(__DIR__.'/../config/scout-solr.php', 'scout-solr');
