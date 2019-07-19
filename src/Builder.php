@@ -272,4 +272,12 @@ class Builder extends ScoutBuilder
     {
         return $this->useDismax;
     }
+
+    /**
+     * @return bool
+     */
+    public function hasOrberBy()
+    {
+        return ! empty($this->orders);
+    }
 }

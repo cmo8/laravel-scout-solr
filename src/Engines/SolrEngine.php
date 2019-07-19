@@ -288,6 +288,13 @@ class SolrEngine extends Engine
             $query->setRows($builder->limit);
         }
 
+        // allow sort
+        if ($builder->hasOrberBy()) {
+            foreach ($builder->orders as $key => $orderBy) {
+                $query->addSort($orderBy['column'], $orderBy['direction']);
+            }
+        }
+
         return $this->client->select($query, $endpoint);
     }
 
