@@ -2,12 +2,13 @@
 
 namespace Scout\Solr\Engines;
 
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Database\Eloquent\Collection;
+use Laravel\Scout\Builder as BaseBuilder;
+use Laravel\Scout\Engines\Engine;
 use Scout\Solr\Builder;
 use Scout\Solr\Searchable;
-use Laravel\Scout\Engines\Engine;
 use Solarium\Client as SolariumClient;
-use Laravel\Scout\Builder as BaseBuilder;
-use Illuminate\Database\Eloquent\Collection;
 
 class SolrEngine extends Engine
 {
@@ -19,69 +20,90 @@ class SolrEngine extends Engine
     private $client;
 
     /**
+     * Is searching/updating disabled for this instance.
+     *
+     * @var bool
+     */
+    private $enabled = true;
+
+    /**
+     * Make the key for the meta values in the searchable array configurable.
+     *
+     * @var string
+     */
+    private $metaKey = null;
+
+    /**
      * Constructor takes an initialized Solarium client as its only parameter.
+     *
      * @param SolariumClient $client The Solarium client to use
      */
-    public function __construct(SolariumClient $client)
+    public function __construct(SolariumClient $client, ConfigRepository $config)
     {
         $this->client = $client;
+        $this->enabled = $config->get('solr.enabled', true);
+        $this->metaKey = $config->get('solr.meta_key', 'meta');
     }
 
     /**
      * Update the given model in the index.
      *
-     * @param  \Illuminate\Database\Eloquent\Collection  $models
+     * @param \Illuminate\Database\Eloquent\Collection $models
      * @return void
      */
     public function update($models)
     {
-        $model = $models->first();
-        if (! $model->shouldBeSearchable()) {
-            return;
-        }
+        if ($this->enabled) {
+            $model = $models->first();
+            $update = $this->client->createUpdate();
+            $documents = $models->map(
+                /**
+                 * @return false|\Solarium\QueryType\Update\Query\Document\Document
+                 */
+                function ($model) use ($update) {
+                    /** @var \Solarium\QueryType\Update\Query\Document\Document */
+                    $document = $update->createDocument();
+                    /** @var Searchable $model */
+                    $attrs = $model->toSearchableArray();
+                    if (empty($attrs)) {
+                        return false;
+                    }
+                    // introduce functionality for solr meta data
+                    if (array_key_exists($this->metaKey, $attrs)) {
+                        $meta = $attrs[$this->metaKey];
+                        // check if their are boosts to apply to the document
+                        if (array_key_exists('boosts', $meta)) {
+                            $boosts = $meta['boosts'];
+                            if (array_key_exists('document', $boosts)) {
+                                if (is_float($boosts['document'])) {
+                                    $document->setBoost($boosts['document']);
+                                }
+                                unset($boosts['document']);
+                            }
+                            foreach ($boosts as $field => $boost) {
+                                if (is_float($boost)) {
+                                    $document->setFieldBoost($field, $boost);
+                                }
+                            }
+                        }
+                        unset($attrs[$this->metaKey]);
+                    }
+                    // leave this extra here to allow for modification if needed
+                    foreach ($attrs as $key => $attr) {
+                        $document->$key = $attr;
+                    }
+                    $class = is_object($model) ? get_class($model) : false;
+                    if ($class) {
+                        $document->_modelClass = $class;
+                    }
 
-        $update = $this->client->createUpdate();
-        $documents = $models->map(/**
-         * @return false|\Solarium\QueryType\Update\Query\Document\Document
-         */
-        function ($model) use ($update) {
-            /** @var \Solarium\QueryType\Update\Query\Document\Document */
-            $document = $update->createDocument();
-            /** @var Searchable $model */
-            $attrs = $model->toSearchableArray();
-            if (empty($attrs)) {
-                return false;
-            }
-            // introduce functionality for solr meta data
-            if (array_key_exists('meta', $attrs)) {
-                $meta = $attrs['meta'];
-                // check if their are boosts to apply to the document
-                if (array_key_exists('boosts', $meta)) {
-                    $boosts = $meta['boosts'];
-                    if (array_key_exists('document', $boosts)) {
-                        if (is_float($boosts['document'])) {
-                            $document->setBoost($boosts['document']);
-                        }
-                        unset($boosts['document']);
-                    }
-                    foreach ($boosts as $field => $boost) {
-                        if (is_float($boost)) {
-                            $document->setFieldBoost($field, $boost);
-                        }
-                    }
+                    return $document;
                 }
-                unset($attrs['meta']);
-            }
-            // leave this extra here to allow for modification if needed
-            foreach ($attrs as $key => $attr) {
-                $document->$key = $attr;
-            }
-
-            return $document;
-        })->filter();
-        $update->addDocuments($documents->filter()->toArray());
-        $update->addCommit();
-        $this->client->update($update, $model->searchableAs());
+            )->filter();
+            $update->addDocuments($documents->filter()->toArray());
+            $update->addCommit();
+            $this->client->update($update, $model->searchableAs());
+        }
     }
 
     /**
@@ -92,15 +114,17 @@ class SolrEngine extends Engine
      */
     public function delete($models)
     {
-        $model = $models->first();
-        $delete = $this->client->createUpdate();
-        $endpoint = $model->searchableAs();
-        $ids = $models->map(function ($model) {
-            return $model->getScoutKey();
-        });
-        $delete->addDeleteByIds($ids->all());
-        $delete->addCommit();
-        $this->client->update($delete, $endpoint);
+        if ($this->enabled) {
+            $model = $models->first();
+            $delete = $this->client->createUpdate();
+            $endpoint = $model->searchableAs();
+            $ids = $models->map(function ($model) {
+                return $model->getScoutKey();
+            });
+            $delete->addDeleteByIds($ids->all());
+            $delete->addCommit();
+            $this->client->update($delete, $endpoint);
+        }
     }
 
     /**
@@ -112,6 +136,10 @@ class SolrEngine extends Engine
      */
     public function search(BaseBuilder $builder)
     {
+        if (! $this->enabled) {
+            return Collection::make();
+        }
+
         return $this->performSearch($builder);
     }
 
@@ -165,8 +193,7 @@ class SolrEngine extends Engine
 
         $ids = collect($results)
             ->pluck($model->getKeyName())
-            ->values()
-            ->all();
+            ->values();
 
         // TODO: Is there a better way to handle including faceting on a mapped result?
         $facetSet = $results->getFacetSet();
@@ -178,7 +205,7 @@ class SolrEngine extends Engine
         // TODO: (cont'd) Because attaching facets to every model feels kludgy
         // solution is to implement a custom collection class that can hold the facets
         $models = $model->whereIn($model->getKeyName(), $ids)
-            ->orderByRaw(sprintf('FIELD(%s, %s)', $model->getKeyName(), implode(',', $ids), 'ASC'))
+            ->orderByRaw($this->orderQuery($model, $ids))
             ->get()
             ->map(function ($item) use ($facets) {
                 $item->facets = $facets;
@@ -187,6 +214,35 @@ class SolrEngine extends Engine
             });
 
         return $models;
+    }
+
+    /**
+     * Return the appropriate sorting(ranking) query for the SQL driver.
+     *
+     * @param \Illuminate\Database\Eloquent\Model  $model
+     * @param  \Illuminate\Database\Eloquent\Collection  $ids
+     *
+     * @return string The query that will be used for the ordering (ranking)
+     */
+    private function orderQuery($model, $ids)
+    {
+        $driver = $model->getConnection()->getDriverName();
+        $model_key = $model->getKeyName();
+        $query = '';
+
+        if ($driver == 'pgsql') {
+            foreach ($ids as $id) {
+                $query .= sprintf('%s=%s desc, ', $model_key, $id);
+            }
+            $query = rtrim($query, ', ');
+        } elseif ($driver == 'mysql') {
+            $id_list = $ids->implode(',');
+            $query = sprintf('FIELD(%s, %s)', $model_key, $id_list, 'ASC');
+        } else {
+            throw new \Exception('The SQL driver is not supported.');
+        }
+
+        return $query;
     }
 
     /**
@@ -211,7 +267,9 @@ class SolrEngine extends Engine
     protected function performSearch($builder, array $options = [])
     {
         if (! ($builder instanceof Builder)) {
-            throw new \Exception('Your model must use the Scout\\Solr\\Searchable trait in place of Laravel\\Scout\\Searchable');
+            throw new \Exception(
+                'Your model must use the Scout\\Solr\\Searchable trait in place of Laravel\\Scout\\Searchable'
+            );
         }
         $endpoint = $builder->model->searchableAs();
         // build the query string for the q parameter
@@ -238,9 +296,12 @@ class SolrEngine extends Engine
         $query = $this->client->createSelect();
         if ($builder->isDismax()) {
             $dismax = $query->getDisMax();
-            if (empty($queryString)) {
-                $dismax->setQueryAlternative('*:*');
-            }
+        } elseif ($builder->isEDismax()) {
+            $dismax = $query->getEDisMax();
+        }
+
+        if (isset($dismax) && empty($queryString)) {
+            $dismax->setQueryAlternative('*:*');
         }
         $query->setQuery($queryString);
 
@@ -288,13 +349,6 @@ class SolrEngine extends Engine
             $query->setRows($builder->limit);
         }
 
-        // allow sort
-        if ($builder->hasOrberBy()) {
-            foreach ($builder->orders as $key => $orderBy) {
-                $query->addSort($orderBy['column'], $orderBy['direction']);
-            }
-        }
-
         return $this->client->select($query, $endpoint);
     }
 
@@ -335,7 +389,7 @@ class SolrEngine extends Engine
             $end = $start + count($items);
             $query = collect(range($start + 1, $end))
                 ->map(function (int $index) use ($field, $mode): string {
-                    return "$field:%$mode$index%";
+                    return "$field:%$mode $index%";
                 })->implode(' OR ');
             $start = $end;
         }
@@ -344,8 +398,7 @@ class SolrEngine extends Engine
 
         return [
             'query' => empty($carryQuery) ?
-                sprintf('(%s)', $query) :
-                sprintf('%s %s (%s)', $carryQuery, $data['boolean'], $query),
+                sprintf('(%s)', $query) : sprintf('%s %s (%s)', $carryQuery, $data['boolean'], $query),
             'items' => array_merge($carryItems, $items),
             'placeholderStart' => $start,
         ];
@@ -359,10 +412,12 @@ class SolrEngine extends Engine
      */
     public function flush($model)
     {
-        // $indexName   = $model->searchableAs();
-        // $pathToIndex = $this->tnt->config['storage']."/{$indexName}.index";
-        // if (file_exists($pathToIndex)) {
-        //     unlink($pathToIndex);
-        // }
+        $class = is_object($model) ? get_class($model) : false;
+        if ($class) {
+            $update = $this->client->createUpdate();
+            $update->addDeleteQuery("_modelClass:$class");
+            $update->addCommit();
+            $this->client->update($update);
+        }
     }
 }

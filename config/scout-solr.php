@@ -17,7 +17,9 @@ return [
     /*
      * Whether or not solr is enabled
      */
-    'enabled' => env('SOLR_IMPORT', false),
+    'enabled' => env('SOLR_IMPORT', true),
+
+    'meta_key' => env('SOLR_META_KEY', 'meta'),
 
     /*
     |--------------------------------------------------------------------------
