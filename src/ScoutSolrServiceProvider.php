@@ -24,7 +24,10 @@ class ScoutSolrServiceProvider extends ServiceProvider
     {
         // bind the solarium client as a singleton so we can DI
         $this->app->singleton(\Solarium\Client::class, function ($app) {
-            return new \Solarium\Client([
+            $adapter = new \Solarium\Core\Client\Adapter\Curl();
+            $eventDispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+
+            return new \Solarium\Client($adapter, $eventDispatcher, [
                 'endpoint' => config('scout-solr.endpoints'),
             ]);
         });
