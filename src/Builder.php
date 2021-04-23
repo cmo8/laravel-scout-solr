@@ -336,4 +336,12 @@ class Builder extends ScoutBuilder
     {
         return $this->start;
     }
+
+    /**
+     * @return bool
+     */
+    public function hasOrberBy()
+    {
+        return ! empty($this->orders);
+    }
 }
