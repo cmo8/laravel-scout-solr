@@ -74,21 +74,21 @@ class SolrEngine extends Engine
                     // introduce functionality for solr meta data
                     if (array_key_exists($this->metaKey, $attrs)) {
                         $meta = $attrs[$this->metaKey];
-                        // check if their are boosts to apply to the document
-                        if (array_key_exists('boosts', $meta)) {
-                            $boosts = $meta['boosts'];
-                            if (array_key_exists('document', $boosts)) {
-                                if (is_float($boosts['document'])) {
-                                    $document->setBoost($boosts['document']);
-                                }
-                                unset($boosts['document']);
-                            }
-                            foreach ($boosts as $field => $boost) {
-                                if (is_float($boost)) {
-                                    $document->setFieldBoost($field, $boost);
-                                }
-                            }
-                        }
+//                        // check if their are boosts to apply to the document
+//                        if (array_key_exists('boosts', $meta)) {
+//                            $boosts = $meta['boosts'];
+//                            if (array_key_exists('document', $boosts)) {
+//                                if (is_float($boosts['document'])) {
+//                                    $document->setBoost($boosts['document']);
+//                                }
+//                                unset($boosts['document']);
+//                            }
+//                            foreach ($boosts as $field => $boost) {
+//                                if (is_float($boost)) {
+//                                    $document->setFieldBoost($field, $boost);
+//                                }
+//                            }
+//                        }
                         unset($attrs[$this->metaKey]);
                     }
                     // leave this extra here to allow for modification if needed
