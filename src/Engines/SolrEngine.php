@@ -310,8 +310,8 @@ class SolrEngine extends Engine
 
         // get the filter query
         // TODO: this is highly inefficient due to the unique key? Or will the query still be cached?
-        $filterQuery = $this->filters($builder);
-        $query->createFilterQuery(md5($filterQuery['query']))->setQuery($filterQuery['query'], $filterQuery['items']);
+//        $filterQuery = $this->filters($builder);
+//        $query->createFilterQuery(md5($filterQuery['query']))->setQuery($filterQuery['query'], $filterQuery['items']);
 
         // build any faceting
         $facetSet = $query->getFacetSet();
